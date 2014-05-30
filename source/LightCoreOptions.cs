@@ -10,7 +10,7 @@ namespace Bootstrap.LightCore
     {
         private readonly IBootstrapperContainerExtensionOptions options;
 
-        public IContainer Container { get; set; }
+        public IContainerBuilder Builder { get; set; }
         public bool AutoRegistration { get { return options.AutoRegistration; } }
 
         public LightCoreOptions(IBootstrapperContainerExtensionOptions options)
@@ -18,9 +18,9 @@ namespace Bootstrap.LightCore
             this.options = options;
         }
 
-        public LightCoreOptions WithContainer(IContainer container)
+        public LightCoreOptions WithBuilder(IContainerBuilder builder)
         {
-            Container = container;
+            Builder = builder;
             return this;
         }
 

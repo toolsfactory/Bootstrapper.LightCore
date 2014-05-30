@@ -4,83 +4,80 @@ using System.Linq;
 using Bootstrap.Extensions;
 using Bootstrap.Extensions.Containers;
 using LightCore;
+using LightCore.CommonServiceLocator;
+using Microsoft.Practices.ServiceLocation;
 
 namespace Bootstrap.LightCore
 {
     public class LightCoreExtension : BootstrapperContainerExtension
     {
-        public LightCoreOptions Options { get; private set; }
+        private IContainer _Container;
+        private IContainerBuilder _Builder;
 
+        public LightCoreOptions Options { get; private set; }
 
         public LightCoreExtension(IRegistrationHelper registrationHelper, IBootstrapperContainerExtensionOptions options)
             : base(registrationHelper)
         {
             Options = new LightCoreOptions(options);
             Bootstrapper.Excluding.Assembly("LightCore");
+            Bootstrapper.Excluding.Assembly("Microsoft");
+        }
+
+        public void InitializeContainer(IContainerBuilder builder)
+        {
+            _Builder = builder;
         }
 
         protected override void InitializeContainer()
         {
-            ModuleManager.Build();
-            Container = ModuleManager._container;
+            InitializeContainer(Options.Builder ?? new ContainerBuilder());
         }
 
         protected override void RegisterImplementationsOfIRegistration()
         {
-            CheckContainer();
             if (Options.AutoRegistration) AutoRegister();
-            RegisterAll<IBootstrapperRegistration>();
-            RegisterAll<ILightCoreRegistration>();
+            InternalRegisterAll<IBootstrapperRegistration>(_Builder);
+            InternalRegisterAll<ILightCoreRegistration>(_Builder);
         }
 
         protected override void InvokeRegisterForImplementationsOfIRegistration()
         {
-            CheckContainer();
-
-            try
-            {
-                ModuleManager.Resolve<IEnumerable<IBootstrapperRegistration>>().ToList().ForEach(r => r.Register(this));
-            }
-            catch { }
-            try
-            {
-                ModuleManager.Resolve<IEnumerable<ILightCoreRegistration>>().ToList().ForEach(r => r.Register(ModuleManager._builder));
-            }
-            catch { }
-            ModuleManager.Build();
+            Build();
+            _Container.Resolve<IEnumerable<IBootstrapperRegistration>>().ToList().ForEach(r => r.Register(this));
+            _Container.Resolve<IEnumerable<ILightCoreRegistration>>().ToList().ForEach(r => r.Register(_Builder));
+            Build();
         }
 
-        protected override void ResetContainer()
+        public override void Register<TTarget>(TTarget implementation)
         {
-            ModuleManager.CleanUp();
+            _Builder.Register<TTarget>(implementation);
+            Build();
+        }
+
+        public override void Register<TTarget,TImplementation>()
+        {
+            _Builder.Register<TTarget, TImplementation>();
+            Build();
         }
 
         public override void RegisterAll<TTarget>()
         {
-            var asm = Registrator.GetAssemblies().ToList();
-            var items = Registrator
-                        .GetAssemblies()
-                        .SelectMany(a => Registrator.GetTypesImplementing<TTarget>(a));
-            items.ForEach(t => ModuleManager.Register(typeof(TTarget), t));
-            if (items.Count()>0)
-                ModuleManager.Build();
+            InternalRegisterAll<TTarget>(_Builder);
+            Build();
         }
 
-        public override void SetServiceLocator()
+        protected override void ResetContainer()
         {
-            throw new NotImplementedException();
-        }
-
-        public override void ResetServiceLocator()
-        {
-            throw new NotImplementedException();
+ 	        _Builder = new ContainerBuilder();
+            _Container = null;
         }
 
         public override T Resolve<T>()
         {
             try
             {
-                return ModuleManager.Resolve<T>();
+                return _Container.Resolve<T>();
             }
             catch (RegistrationNotFoundException ex)
             { return null; } 
@@ -90,23 +87,34 @@ namespace Bootstrap.LightCore
         {
             try
             {
-                return ModuleManager.Resolve<IEnumerable<T>>().ToList();
+                return _Container.Resolve<IEnumerable<T>>().ToList();
             }
             catch (RegistrationNotFoundException ex)
             { return new List<T>(); }
         }
 
-        public override void Register<TTarget, TImplementation>()
+        public override void SetServiceLocator()
         {
-            ModuleManager.Register<TTarget, TImplementation>();
-            ModuleManager.Build();
+            ServiceLocator.SetLocatorProvider(() => new LightCoreAdapter(_Container));
         }
 
-        public override void Register<TTarget>(TTarget implementation)
+        public override void ResetServiceLocator()
         {
-            ModuleManager.Register<TTarget>(implementation);
-            ModuleManager.Build();
+            ServiceLocator.SetLocatorProvider(() => null);
         }
 
+        public void Build()
+        {
+            if (_Builder == null)
+                throw new InvalidOperationException();
+
+            Container = _Container = _Builder.Build();
+        }
+        private void InternalRegisterAll<TTarget>(IContainerBuilder builder)
+        {
+            var assemblies = Registrator.GetAssemblies().ToList();
+            assemblies.ForEach(a => Registrator.GetTypesImplementing<TTarget>(a).ToList()
+                                .ForEach(t => builder.Register(typeof(TTarget), t)));
+        }
     }
 }

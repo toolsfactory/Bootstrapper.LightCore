@@ -2,3 +2,8 @@
 /source/obj
 /source/bin
 /*.suo
+/tests/bin
+/tests/obj
+/Storage.dat
+/Index.dat
+/README.html
